@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV Voice Row Reader</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#222}
+.wrap{max-width:1100px;margin:25px auto;padding:20px}
+h1{margin:0 0 8px}.sub{color:#555;margin-bottom:18px}
+.panel,.help,.status,.rowcard{background:#fff;border-radius:9px;padding:16px;margin:12px 0;box-shadow:0 2px 7px #0001}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
+button{padding:10px 15px;border:0;border-radius:7px;cursor:pointer;font-size:15px}
+.primary{background:#1769aa;color:#fff}.secondary{background:#ddd}.danger{background:#b3261e;color:#fff}
+input[type=number]{width:75px;padding:9px;border:1px solid #aaa;border-radius:6px}
+input[type=file]{padding:8px}.status{font-weight:bold}
+.reg{font-size:24px;font-weight:bold}.name{font-size:25px;margin:7px 0 16px}
+.values{display:flex;flex-wrap:wrap;gap:8px}.value{background:#eef2f5;padding:8px 12px;border-radius:6px}
+.total{background:#dcecff;font-weight:bold}.help{background:#fff8df}
+.small{font-size:13px;color:#666}.hidden{display:none}
+.tablewrap{max-height:450px;overflow:auto}
+table{width:100%;border-collapse:collapse;background:#fff}
+th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+th{background:#f0f2f4;position:sticky;top:0}
+tr.active{background:#dcecff;font-weight:bold}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<h1>CSV Voice Row Reader</h1>
+<div class="sub">Select any CSV file and read it one row at a time.</div>
+
+<div class="panel">
+<b>1. Select CSV file</b><br><br>
+<input id="csvFile" type="file" accept=".csv,text/csv">
+<div id="fileInfo" class="small" style="margin-top:8px">
+No CSV selected.
+</div>
+</div>
+
+<div class="help">
+<b>Voice commands:</b><br>
+<strong>Yes</strong> / <strong>Next</strong> → next row<br>
+<strong>Repeat</strong> / <strong>Again</strong> → repeat current row<br>
+<strong>Previous</strong> / <strong>Back</strong> → previous row<br>
+<strong>Stop</strong> → stop<br>
+<strong>Start</strong> / <strong>Read</strong> → read current row
+</div>
+
+<div class="controls">
+
+<label>
+<b>Start at row:</b>
+<input id="startRowInput" type="number" min="1" value="1">
+</label>
+
+<button class="primary" onclick="setStartRow()">Go to Row</button>
+<button class="primary" onclick="startReading()">▶ Read Current Row</button>
+<button class="secondary" onclick="repeatRow()">↻ Repeat</button>
+<button class="secondary" onclick="previousRow()">← Previous</button>
+<button class="secondary" onclick="nextRow()">Next →</button>
+<button class="danger" onclick="stopAll()">■ Stop</button>
+
+</div>
+
+<div class="status" id="status">
+Please select a CSV file.
+</div>
+
+<div class="rowcard hidden" id="currentCard"></div>
+
+<h2 id="listTitle" class="hidden">CSV Rows</h2>
+
+<div id="tableContainer" class="tablewrap"></div>
+
+</div>
+
+<script>
+
+/*
+===========================================================
+CSV VOICE ROW READER
+===========================================================
+
+There is NO student data in this program.
+
+All data comes from the CSV selected by the user.
+
+Expected CSV structure:
+
+Register No,Name,M1,M2,M3,...,Total
+2024115002,SHARVESHWAR SHANKAR,2,2,2,...,45
+2024115004,MINISHREE M R,2,2,2,...,42
+
+The program treats:
+  Column 1 = Register number
+  Column 2 = Name
+  Columns 3 onward = values to read
+
+The second column (Name) is hidden from the table display,
+but the name is spoken.
+===========================================================
+*/
+
+let headers = [];
+let rows = [];
+let current = 0;
+
+let recognition = null;
+let stopped = false;
+
+
+/* ---------- NUMBER TO WORDS ---------- */
+
+const numberWords = {
+0:"zero",1:"one",2:"two",3:"three",4:"four",5:"five",
+6:"six",7:"seven",8:"eight",9:"nine",10:"ten",
+11:"eleven",12:"twelve",13:"thirteen",14:"fourteen",
+15:"fifteen",16:"sixteen",17:"seventeen",18:"eighteen",
+19:"nineteen",20:"twenty",21:"twenty-one",22:"twenty-two",
+23:"twenty-three",24:"twenty-four",25:"twenty-five",
+26:"twenty-six",27:"twenty-seven",28:"twenty-eight",
+29:"twenty-nine",30:"thirty",31:"thirty-one",32:"thirty-two",
+33:"thirty-three",34:"thirty-four",35:"thirty-five",
+36:"thirty-six",37:"thirty-seven",38:"thirty-eight",
+39:"thirty-nine",40:"forty",41:"forty-one",42:"forty-two",
+43:"forty-three",44:"forty-four",45:"forty-five",
+46:"forty-six",47:"forty-seven",48:"forty-eight",
+49:"forty-nine",50:"fifty",51:"fifty-one",52:"fifty-two",
+53:"fifty-three",54:"fifty-four",55:"fifty-five",
+56:"fifty-six",57:"fifty-seven",58:"fifty-eight",
+59:"fifty-nine",60:"sixty",61:"sixty-one",62:"sixty-two",
+63:"sixty-three",64:"sixty-four",65:"sixty-five",
+66:"sixty-six",67:"sixty-seven",68:"sixty-eight",
+69:"sixty-nine",70:"seventy",71:"seventy-one",
+72:"seventy-two",73:"seventy-three",74:"seventy-four",
+75:"seventy-five",76:"seventy-six",77:"seventy-seven",
+78:"seventy-eight",79:"seventy-nine",80:"eighty",
+81:"eighty-one",82:"eighty-two",83:"eighty-three",
+84:"eighty-four",85:"eighty-five",86:"eighty-six",
+87:"eighty-seven",88:"eighty-eight",89:"eighty-nine",
+90:"ninety",91:"ninety-one",92:"ninety-two",93:"ninety-three",
+94:"ninety-four",95:"ninety-five",96:"ninety-six",
+97:"ninety-seven",98:"ninety-eight",99:"ninety-nine",
+100:"one hundred"
+};
+
+function sayNumber(value){
+
+    const text = String(value).trim();
+
+    const number = Number(text);
+
+    if(
+        Number.isFinite(number) &&
+        Number.isInteger(number) &&
+        numberWords[number] !== undefined
+    ){
+        return numberWords[number];
+    }
+
+    return text;
+}
+
+
+/* ---------- REGISTER NUMBER ---------- */
+
+function registerNumberSpeech(value){
+
+    return String(value)
+        .trim()
+        .split("")
+        .map(character => {
+
+            if(/\d/.test(character)){
+                return sayNumber(Number(character));
+            }
+
+            return character;
+
+        })
+        .join(" ");
+}
+
+
+/* ---------- CSV PARSER ---------- */
+
+function parseCSV(text){
+
+    const records = [];
+
+    let row = [];
+    let field = "";
+    let quoted = false;
+
+    for(let i=0;i<text.length;i++){
+
+        const c = text[i];
+
+        if(c === '"'){
+
+            if(quoted && text[i+1] === '"'){
+                field += '"';
+                i++;
+            }
+            else{
+                quoted = !quoted;
+            }
+
+        }
+        else if(c === ',' && !quoted){
+
+            row.push(field.trim());
+            field = "";
+
+        }
+        else if((c === '\n' || c === '\r') && !quoted){
+
+            if(c === '\r' && text[i+1] === '\n'){
+                i++;
+            }
+
+            row.push(field.trim());
+            field = "";
+
+            if(row.some(v => v !== "")){
+                records.push(row);
+            }
+
+            row = [];
+
+        }
+        else{
+
+            field += c;
+
+        }
+    }
+
+    if(field !== "" || row.length){
+
+        row.push(field.trim());
+
+        if(row.some(v => v !== "")){
+            records.push(row);
+        }
+    }
+
+    return records;
+}
+
+
+/* ---------- ESCAPE HTML ---------- */
+
+function escapeHTML(value){
+
+    return String(value).replace(/[&<>"']/g,function(c){
+
+        return {
+            "&":"&amp;",
+            "<":"&lt;",
+            ">":"&gt;",
+            '"':"&quot;",
+            "'":"&#39;"
+        }[c];
+
+    });
+}
+
+
+/* ---------- LOAD CSV ---------- */
+
+document
+.getElementById("csvFile")
+.addEventListener("change",function(event){
+
+    const file = event.target.files[0];
+
+    if(!file){
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = function(event){
+
+        try{
+
+            const records = parseCSV(event.target.result);
+
+            if(records.length < 2){
+
+                throw new Error(
+                    "CSV must contain a header row and at least one data row."
+                );
+
+            }
+
+            headers = records[0];
+
+            rows = records.slice(1);
+
+            /*
+             Make every row the same length as the header.
+            */
+
+            rows = rows.map(function(row){
+
+                while(row.length < headers.length){
+                    row.push("");
+                }
+
+                return row.slice(0,headers.length);
+
+            });
+
+            current = 0;
+
+            document
+            .getElementById("startRowInput")
+            .max = rows.length;
+
+            document
+            .getElementById("fileInfo")
+            .textContent =
+                file.name +
+                " — " +
+                rows.length +
+                " rows, " +
+                headers.length +
+                " columns";
+
+            render();
+
+            setStatus(
+                "Loaded " +
+                rows.length +
+                " rows. Ready at row 1."
+            );
+
+        }
+        catch(error){
+
+            headers = [];
+            rows = [];
+
+            render();
+
+            setStatus(
+                "Could not read CSV: " +
+                error.message
+            );
+
+        }
+
+    };
+
+    reader.readAsText(file);
+
+});
+
+
+/* ---------- STATUS ---------- */
+
+function setStatus(message){
+
+    document
+    .getElementById("status")
+    .textContent = message;
+
+}
+
+
+/* ---------- DISPLAY CURRENT ROW ---------- */
+
+function render(){
+
+    const card =
+        document.getElementById("currentCard");
+
+    if(!rows.length){
+
+        card.classList.add("hidden");
+
+        document
+        .getElementById("listTitle")
+        .classList.add("hidden");
+
+        document
+        .getElementById("tableContainer")
+        .innerHTML = "";
+
+        return;
+    }
+
+    card.classList.remove("hidden");
+
+    document
+    .getElementById("listTitle")
+    .classList.remove("hidden");
+
+    document
+    .getElementById("startRowInput")
+    .value = current + 1;
+
+    const row = rows[current];
+
+    const registerNumber = row[0] || "";
+    const name = row[1] || "";
+
+    const values = row.slice(2);
+
+    card.innerHTML =
+
+        `<div class="small">
+            Row ${current+1} of ${rows.length}
+         </div>
+
+         <div class="reg">
+            ${escapeHTML(registerNumber)}
+         </div>
+
+         <div class="name">
+            ${escapeHTML(name)}
+         </div>
+
+         <div class="values">
+
+            ${values.map(function(value){
+
+                return `
+                <span class="value">
+                    ${escapeHTML(value)}
+                </span>`;
+
+            }).join("")}
+
+         </div>`;
+
+
+    /*
+       Display table.
+
+       Column 2 = Name is intentionally hidden.
+    */
+
+    let table =
+        `<table>
+        <thead>
+        <tr>
+        <th>#</th>`;
+
+    headers.forEach(function(header,index){
+
+        if(index !== 1){
+
+            table +=
+                `<th>${escapeHTML(header)}</th>`;
+
+        }
+
+    });
+
+    table += "</tr></thead><tbody>";
+
+
+    rows.forEach(function(row,index){
+
+        table +=
+            `<tr class="${index === current ? "active" : ""}"
+                 onclick="selectRow(${index})">
+
+            <td>${index+1}</td>`;
+
+        row.forEach(function(value,columnIndex){
+
+            if(columnIndex !== 1){
+
+                table +=
+                    `<td>${escapeHTML(value)}</td>`;
+
+            }
+
+        });
+
+        table += "</tr>";
+
+    });
+
+    table += "</tbody></table>";
+
+    document
+    .getElementById("tableContainer")
+    .innerHTML = table;
+
+}
+
+
+/* ---------- SPEECH ---------- */
+
+function speakRow(row,callback){
+
+    window.speechSynthesis.cancel();
+
+    if(!row || row.length < 2){
+        return;
+    }
+
+    const registerNumber = row[0] || "";
+    const name = row[1] || "";
+
+    const values = row.slice(2);
+
+    /*
+       First speak register number and name.
+    */
+
+    const introduction =
+        new SpeechSynthesisUtterance(
+            `Register number ${registerNumberSpeech(registerNumber)}. ${name}.`
+        );
+
+    introduction.rate = 0.82;
+    introduction.pitch = 1;
+
+
+    introduction.onend = function(){
+
+        let index = 0;
+
+
+        function speakNextValue(){
+
+            if(stopped){
+                return;
+            }
+
+
+            /*
+               Finished all values.
+            */
+
+            if(index >= values.length){
+
+                /*
+                   One-second pause before total/final value.
+                */
+
+                setTimeout(function(){
+
+                    if(stopped){
+                        return;
+                    }
+
+                    const lastHeader =
+                        headers[headers.length-1] || "";
+
+                    const lastValue =
+                        row[row.length-1] || "";
+
+                    const prefix =
+                        /total/i.test(lastHeader)
+                        ? "Total "
+                        : "";
+
+                    const utterance =
+                        new SpeechSynthesisUtterance(
+                            prefix + sayNumber(lastValue)
+                        );
+
+                    utterance.rate = 0.82;
+                    utterance.pitch = 1;
+
+                    utterance.onend = function(){
+
+                        if(callback && !stopped){
+                            callback();
+                        }
+
+                    };
+
+                    window.speechSynthesis.speak(
+                        utterance
+                    );
+
+                },1000);
+
+                return;
+            }
+
+
+            /*
+               Speak one mark/value.
+            */
+
+            const utterance =
+                new SpeechSynthesisUtterance(
+                    sayNumber(values[index])
+                );
+
+            utterance.rate = 0.82;
+            utterance.pitch = 1;
+
+            utterance.onend = function(){
+
+                index++;
+
+                /*
+                   ONE SECOND PAUSE BETWEEN VALUES.
+                */
+
+                setTimeout(
+                    speakNextValue,
+                    1000
+                );
+
+            };
+
+            window.speechSynthesis.speak(
+                utterance
+            );
+
+        }
+
+        speakNextValue();
+
+    };
+
+    window.speechSynthesis.speak(
+        introduction
+    );
+
+}
+
+
+/* ---------- START READING ---------- */
+
+function startReading(){
+
+    if(!rows.length){
+
+        setStatus(
+            "Please select a CSV file first."
+        );
+
+        return;
+    }
+
+    stopped = false;
+
+    stopListening();
+
+    setStatus(
+        `Reading row ${current+1}. Please wait...`
+    );
+
+    speakRow(
+        rows[current],
+        function(){
+
+            if(!stopped){
+                beginListening();
+            }
+
+        }
+    );
+
+}
+
+
+/* ---------- REPEAT ---------- */
+
+function repeatRow(){
+
+    startReading();
+
+}
+
+
+/* ---------- START AT SPECIFIC ROW ---------- */
+
+function setStartRow(){
+
+    if(!rows.length){
+
+        setStatus(
+            "Please select a CSV file first."
+        );
+
+        return;
+    }
+
+    let rowNumber =
+        parseInt(
+            document
+            .getElementById("startRowInput")
+            .value,
+            10
+        );
+
+    if(
+        isNaN(rowNumber) ||
+        rowNumber < 1 ||
+        rowNumber > rows.length
+    ){
+
+        setStatus(
+            `Enter a row number from 1 to ${rows.length}.`
+        );
+
+        return;
+    }
+
+    stopListening();
+
+    window.speechSynthesis.cancel();
+
+    stopped = false;
+
+    current = rowNumber - 1;
+
+    render();
+
+    setStatus(
+        `Ready at row ${rowNumber}. Click “Read Current Row” to begin.`
+    );
+
+}
+
+
+/* ---------- NEXT ---------- */
+
+function nextRow(){
+
+    if(!rows.length){
+        return;
+    }
+
+    stopListening();
+
+    window.speechSynthesis.cancel();
+
+    stopped = false;
+
+    if(current < rows.length - 1){
+
+        current++;
+
+        render();
+
+        startReading();
+
+    }
+    else{
+
+        setStatus(
+            "End of CSV reached."
+        );
+
+    }
+
+}
+
+
+/* ---------- PREVIOUS ---------- */
+
+function previousRow(){
+
+    if(!rows.length){
+        return;
+    }
+
+    stopListening();
+
+    window.speechSynthesis.cancel();
+
+    stopped = false;
+
+    if(current > 0){
+        current--;
+    }
+
+    render();
+
+    startReading();
+
+}
+
+
+/* ---------- CLICK A TABLE ROW ---------- */
+
+function selectRow(index){
+
+    stopListening();
+
+    window.speechSynthesis.cancel();
+
+    stopped = false;
+
+    current = index;
+
+    render();
+
+    startReading();
+
+}
+
+
+/* ---------- STOP ---------- */
+
+function stopAll(){
+
+    stopped = true;
+
+    window.speechSynthesis.cancel();
+
+    stopListening();
+
+    setStatus(
+        "Stopped. Click “Read Current Row” to continue."
+    );
+
+}
+
+
+/* ---------- VOICE RECOGNITION ---------- */
+
+function beginListening(){
+
+    if(
+        !("webkitSpeechRecognition" in window) &&
+        !("SpeechRecognition" in window)
+    ){
+
+        setStatus(
+            "Speech recognition is not available. Please use Google Chrome."
+        );
+
+        return;
+    }
+
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    recognition =
+        new SpeechRecognition();
+
+
+    recognition.lang = "en-IN";
+
+    recognition.continuous = false;
+
+    recognition.interimResults = false;
+
+
+    setStatus(
+        "Listening — say “Yes” for the next row."
+    );
+
+
+    recognition.onresult = function(event){
+
+        const heard =
+            event.results[0][0]
+            .transcript
+            .toLowerCase()
+            .trim();
+
+
+        if(
+            heard.includes("yes") ||
+            heard.includes("next") ||
+            heard.includes("continue")
+        ){
+
+            nextRow();
+
+        }
+        else if(
+            heard.includes("repeat") ||
+            heard.includes("again")
+        ){
+
+            startReading();
+
+        }
+        else if(
+            heard.includes("previous") ||
+            heard.includes("back")
+        ){
+
+            previousRow();
+
+        }
+        else if(
+            heard.includes("stop")
+        ){
+
+            stopAll();
+
+        }
+        else if(
+            heard.includes("start") ||
+            heard.includes("read")
+        ){
+
+            startReading();
+
+        }
+        else{
+
+            setStatus(
+                `Heard “${heard}”. Say “Yes” for the next row.`
+            );
+
+            if(!stopped){
+
+                setTimeout(
+                    beginListening,
+                    700
+                );
+
+            }
+
+        }
+
+    };
+
+
+    recognition.onerror = function(event){
+
+        recognition = null;
+
+        if(
+            event.error === "not-allowed" ||
+            event.error === "service-not-allowed"
+        ){
+
+            setStatus(
+                "Microphone permission denied. Allow microphone access in Chrome."
+            );
+
+        }
+        else if(!stopped){
+
+            setStatus(
+                "I could not hear you. Say “Yes” for the next row."
+            );
+
+            setTimeout(
+                beginListening,
+                700
+            );
+
+        }
+
+    };
+
+
+    recognition.onend = function(){
+
+        recognition = null;
+
+    };
+
+
+    try{
+
+        recognition.start();
+
+    }
+    catch(error){
+
+        // Browser may report that recognition is already active.
+
+    }
+
+}
+
+
+/* ---------- STOP LISTENING ---------- */
+
+function stopListening(){
+
+    if(recognition){
+
+        try{
+            recognition.stop();
+        }
+        catch(error){}
+
+        recognition = null;
+
+    }
+
+}
+
+
+/* ---------- ENTER KEY FOR ROW NUMBER ---------- */
+
+document
+.getElementById("startRowInput")
+.addEventListener(
+    "keydown",
+    function(event){
+
+        if(event.key === "Enter"){
+            setStartRow();
+        }
+
+    }
+);
+
+</script>
+
+</body>
+</html>
