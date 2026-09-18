@@ -1,1022 +1,695 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CSV Voice Row Reader</title>
 <style>
-body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#222}
-.wrap{max-width:1100px;margin:25px auto;padding:20px}
-h1{margin:0 0 8px}.sub{color:#555;margin-bottom:18px}
-.panel,.help,.status,.rowcard{background:#fff;border-radius:9px;padding:16px;margin:12px 0;box-shadow:0 2px 7px #0001}
-.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
-button{padding:10px 15px;border:0;border-radius:7px;cursor:pointer;font-size:15px}
-.primary{background:#1769aa;color:#fff}.secondary{background:#ddd}.danger{background:#b3261e;color:#fff}
-input[type=number]{width:75px;padding:9px;border:1px solid #aaa;border-radius:6px}
-input[type=file]{padding:8px}.status{font-weight:bold}
-.reg{font-size:24px;font-weight:bold}.name{font-size:25px;margin:7px 0 16px}
-.values{display:flex;flex-wrap:wrap;gap:8px}.value{background:#eef2f5;padding:8px 12px;border-radius:6px}
-.total{background:#dcecff;font-weight:bold}.help{background:#fff8df}
-.small{font-size:13px;color:#666}.hidden{display:none}
-.tablewrap{max-height:450px;overflow:auto}
-table{width:100%;border-collapse:collapse;background:#fff}
-th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}
-th{background:#f0f2f4;position:sticky;top:0}
-tr.active{background:#dcecff;font-weight:bold}
+body{font-family:Arial,sans-serif;margin:24px;line-height:1.45}
+h1{margin-bottom:8px}
+.panel{border:1px solid #ccc;border-radius:10px;padding:16px;margin:14px 0}
+button{padding:10px 16px;margin:4px;border-radius:7px;border:1px solid #888;background:#f5f5f5;cursor:pointer}
+button.primary{font-weight:700;font-size:1.05rem}
+input[type=number]{width:90px;padding:8px}
+.status,.mic{padding:10px;border-radius:8px;margin:8px 0;font-weight:600}
+.status{background:#f2f2f2}
+.mic.ready{background:#e7f5e9}
+.mic.listening{background:#fff3cd}
+.mic.error{background:#f8d7da}
+table{border-collapse:collapse;width:100%;margin-top:12px}
+th,td{border:1px solid #bbb;padding:7px 9px;text-align:left}
+th{background:#eee}
+tr.current{outline:3px solid #333;background:#fff7c2}
+.small{font-size:.92rem;color:#555}
+#yesBtn{font-size:1.25rem;font-weight:700;padding:13px 30px}
+#heard{min-height:24px}
 </style>
 </head>
-
 <body>
-<div class="wrap">
 
 <h1>CSV Voice Row Reader</h1>
-<div class="sub">Select any CSV file and read it one row at a time.</div>
+<p class="small">
+Import a CSV. The program reads Register No., Name, and the marks one at a time.
+</p>
 
 <div class="panel">
-<b>1. Select CSV file</b><br><br>
-<input id="csvFile" type="file" accept=".csv,text/csv">
-<div id="fileInfo" class="small" style="margin-top:8px">
-No CSV selected.
-</div>
+  <label><b>CSV file:</b> <input type="file" id="csvFile" accept=".csv,text/csv"></label>
 </div>
 
-<div class="help">
-<b>Voice commands:</b><br>
-<strong>Yes</strong> / <strong>Next</strong> → next row<br>
-<strong>Repeat</strong> / <strong>Again</strong> → repeat current row<br>
-<strong>Previous</strong> / <strong>Back</strong> → previous row<br>
-<strong>Stop</strong> → stop<br>
-<strong>Start</strong> / <strong>Read</strong> → read current row
+<div class="panel">
+  <label><b>Start at row:</b>
+    <input type="number" id="startRow" min="1" value="1">
+  </label>
+  <button id="goBtn">Go to Row</button>
+  <button id="readBtn">Read Current Row</button>
+  <button id="repeatBtn">Repeat</button>
+  <button id="prevBtn">Previous</button>
+  <button id="nextBtn">Next</button>
+  <button id="stopBtn">Stop</button>
 </div>
 
-<div class="controls">
-
-<label>
-<b>Start at row:</b>
-<input id="startRowInput" type="number" min="1" value="1">
-</label>
-
-<button class="primary" onclick="setStartRow()">Go to Row</button>
-<button class="primary" onclick="startReading()">▶ Read Current Row</button>
-<button class="secondary" onclick="repeatRow()">↻ Repeat</button>
-<button class="secondary" onclick="previousRow()">← Previous</button>
-<button class="secondary" onclick="nextRow()">Next →</button>
-<button class="danger" onclick="stopAll()">■ Stop</button>
-
+<div class="panel">
+  <label><b>Automatic row interval (seconds):</b>
+    <input type="number" id="autoSeconds" min="1" step="1" value="10">
+  </label>
+  <button id="autoBtn" class="primary">▶ Start Automatic Traversal</button>
+  <button id="autoStopBtn">⏹ Stop Automatic Traversal</button>
+  <div class="small">
+    After each row is read, the program waits the specified number of seconds
+    and automatically reads the next row. No voice command or Next button is required.
+  </div>
 </div>
 
-<div class="status" id="status">
-Please select a CSV file.
+<div class="panel">
+  <button id="enableVoice" class="primary">🎤 Enable Voice Input</button>
+  <button id="yesBtn">NEXT ROW</button>
+  <div id="micStatus" class="mic ready">🎤 Voice input not started. Click “Enable Voice Input” once.</div>
+  <div id="status" class="status">Please import a CSV file.</div>
+  <div id="heard" class="small"></div>
 </div>
 
-<div class="rowcard hidden" id="currentCard"></div>
-
-<h2 id="listTitle" class="hidden">CSV Rows</h2>
-
-<div id="tableContainer" class="tablewrap"></div>
-
+<div class="panel">
+  <div id="rowCount">Rows: 0</div>
+  <div id="tableContainer"></div>
 </div>
 
 <script>
-
-/*
-===========================================================
-CSV VOICE ROW READER
-===========================================================
-
-There is NO student data in this program.
-
-All data comes from the CSV selected by the user.
-
-Expected CSV structure:
-
-Register No,Name,M1,M2,M3,...,Total
-2024115002,SHARVESHWAR SHANKAR,2,2,2,...,45
-2024115004,MINISHREE M R,2,2,2,...,42
-
-The program treats:
-  Column 1 = Register number
-  Column 2 = Name
-  Columns 3 onward = values to read
-
-The second column (Name) is hidden from the table display,
-but the name is spoken.
-===========================================================
-*/
+"use strict";
 
 let headers = [];
 let rows = [];
 let current = 0;
-
+let registerSpoken = false;
+let stopped = true;
+let voiceEnabled = false;
 let recognition = null;
-let stopped = false;
+let recognitionRunning = false;
+let retryTimer = null;
 
+// Automatic traversal state.
+let autoTraversal = false;
+let autoTimer = null;
 
-/* ---------- NUMBER TO WORDS ---------- */
+const $ = id => document.getElementById(id);
 
-const numberWords = {
-0:"zero",1:"one",2:"two",3:"three",4:"four",5:"five",
-6:"six",7:"seven",8:"eight",9:"nine",10:"ten",
-11:"eleven",12:"twelve",13:"thirteen",14:"fourteen",
-15:"fifteen",16:"sixteen",17:"seventeen",18:"eighteen",
-19:"nineteen",20:"twenty",21:"twenty-one",22:"twenty-two",
-23:"twenty-three",24:"twenty-four",25:"twenty-five",
-26:"twenty-six",27:"twenty-seven",28:"twenty-eight",
-29:"twenty-nine",30:"thirty",31:"thirty-one",32:"thirty-two",
-33:"thirty-three",34:"thirty-four",35:"thirty-five",
-36:"thirty-six",37:"thirty-seven",38:"thirty-eight",
-39:"thirty-nine",40:"forty",41:"forty-one",42:"forty-two",
-43:"forty-three",44:"forty-four",45:"forty-five",
-46:"forty-six",47:"forty-seven",48:"forty-eight",
-49:"forty-nine",50:"fifty",51:"fifty-one",52:"fifty-two",
-53:"fifty-three",54:"fifty-four",55:"fifty-five",
-56:"fifty-six",57:"fifty-seven",58:"fifty-eight",
-59:"fifty-nine",60:"sixty",61:"sixty-one",62:"sixty-two",
-63:"sixty-three",64:"sixty-four",65:"sixty-five",
-66:"sixty-six",67:"sixty-seven",68:"sixty-eight",
-69:"sixty-nine",70:"seventy",71:"seventy-one",
-72:"seventy-two",73:"seventy-three",74:"seventy-four",
-75:"seventy-five",76:"seventy-six",77:"seventy-seven",
-78:"seventy-eight",79:"seventy-nine",80:"eighty",
-81:"eighty-one",82:"eighty-two",83:"eighty-three",
-84:"eighty-four",85:"eighty-five",86:"eighty-six",
-87:"eighty-seven",88:"eighty-eight",89:"eighty-nine",
-90:"ninety",91:"ninety-one",92:"ninety-two",93:"ninety-three",
-94:"ninety-four",95:"ninety-five",96:"ninety-six",
-97:"ninety-seven",98:"ninety-eight",99:"ninety-nine",
-100:"one hundred"
-};
-
-function sayNumber(value){
-
-    const text = String(value).trim();
-
-    const number = Number(text);
-
-    if(
-        Number.isFinite(number) &&
-        Number.isInteger(number) &&
-        numberWords[number] !== undefined
-    ){
-        return numberWords[number];
-    }
-
-    return text;
+function status(msg) {
+  $("status").textContent = msg;
 }
 
-
-/* ---------- REGISTER NUMBER ---------- */
-
-function registerNumberSpeech(value){
-
-    return String(value)
-        .trim()
-        .split("")
-        .map(character => {
-
-            if(/\d/.test(character)){
-                return sayNumber(Number(character));
-            }
-
-            return character;
-
-        })
-        .join(" ");
+function micStatus(msg, cls) {
+  $("micStatus").textContent = "🎤 " + msg;
+  $("micStatus").className = "mic " + (cls || "ready");
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-/* ---------- CSV PARSER ---------- */
+function csvParse(text) {
+  const records = [];
+  let row = [], field = "", quoted = false;
 
-function parseCSV(text){
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
 
-    const records = [];
-
-    let row = [];
-    let field = "";
-    let quoted = false;
-
-    for(let i=0;i<text.length;i++){
-
-        const c = text[i];
-
-        if(c === '"'){
-
-            if(quoted && text[i+1] === '"'){
-                field += '"';
-                i++;
-            }
-            else{
-                quoted = !quoted;
-            }
-
-        }
-        else if(c === ',' && !quoted){
-
-            row.push(field.trim());
-            field = "";
-
-        }
-        else if((c === '\n' || c === '\r') && !quoted){
-
-            if(c === '\r' && text[i+1] === '\n'){
-                i++;
-            }
-
-            row.push(field.trim());
-            field = "";
-
-            if(row.some(v => v !== "")){
-                records.push(row);
-            }
-
-            row = [];
-
-        }
-        else{
-
-            field += c;
-
-        }
-    }
-
-    if(field !== "" || row.length){
-
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        quoted = false;
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') {
+        quoted = true;
+      } else if (c === ',') {
         row.push(field.trim());
-
-        if(row.some(v => v !== "")){
-            records.push(row);
-        }
+        field = "";
+      } else if (c === '\n') {
+        row.push(field.trim());
+        if (row.some(v => v !== "")) records.push(row);
+        row = [];
+        field = "";
+      } else if (c === '\r') {
+        // Ignore CR; LF handles the row ending.
+      } else {
+        field += c;
+      }
     }
+  }
 
-    return records;
+  if (field !== "" || row.length) {
+    row.push(field.trim());
+    if (row.some(v => v !== "")) records.push(row);
+  }
+
+  return records;
 }
 
+function render() {
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
 
-/* ---------- ESCAPE HTML ---------- */
+  headers.forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
 
-function escapeHTML(value){
+  const tbody = document.createElement("tbody");
 
-    return String(value).replace(/[&<>"']/g,function(c){
+  rows.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    if (i === current) tr.className = "current";
 
-        return {
-            "&":"&amp;",
-            "<":"&lt;",
-            ">":"&gt;",
-            '"':"&quot;",
-            "'":"&#39;"
-        }[c];
-
+    headers.forEach((_, j) => {
+      const td = document.createElement("td");
+      td.textContent = row[j] ?? "";
+      tr.appendChild(td);
     });
+
+    tr.addEventListener("click", () => {
+      current = i;
+      render();
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  $("tableContainer").replaceChildren(table);
+  $("rowCount").textContent =
+    `Rows: ${rows.length} | Current row: ${rows.length ? current + 1 : 0}`;
 }
 
-
-/* ---------- LOAD CSV ---------- */
-
-document
-.getElementById("csvFile")
-.addEventListener("change",function(event){
-
-    const file = event.target.files[0];
-
-    if(!file){
-        return;
+function speak(text) {
+  return new Promise(resolve => {
+    if (stopped) {
+      resolve();
+      return;
     }
 
-    const reader = new FileReader();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.lang = "en-IN";
+    u.rate = 0.85;
+    u.pitch = 1;
+    u.volume = 1;
+    u.onend = resolve;
+    u.onerror = resolve;
+    speechSynthesis.speak(u);
+  });
+}
 
-    reader.onload = function(event){
+function sayValue(value) {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
 
-        try{
+  // Make common decimal marks easier to hear.
+  if (/^\d+\.\d+$/.test(s)) return s.replace(".", " point ");
+  return s;
+}
 
-            const records = parseCSV(event.target.result);
+async function readCurrentRow() {
+  if (!rows.length) {
+    status("Please import a CSV file first.");
+    return;
+  }
 
-            if(records.length < 2){
+  stopRecognitionOnly();
+  speechSynthesis.cancel();
+  stopped = false;
+  render();
 
-                throw new Error(
-                    "CSV must contain a header row and at least one data row."
-                );
+  const row = rows[current];
 
-            }
+  status(`Reading row ${current + 1} of ${rows.length}...`);
 
-            headers = records[0];
+  // Column 1: Register No.
+  // Speak the actual register number for EVERY row.
+  // Do NOT speak the words "Register number".
+  const registerNo = String(row[0] ?? "").trim();
+  if (registerNo) {
+    // For long register numbers, read only the last four digits.
+    // Pad with leading zeroes if necessary so all four digits are retained.
+    const digits = registerNo.replace(/\D/g, "");
+    const lastFour = digits.length >= 4
+      ? digits.slice(-4)
+      : digits.padStart(4, "0");
 
-            rows = records.slice(1);
+    // Speak the four digits separately so Chrome does not interpret
+    // them as a large number (for example, "billion").
+    await speak(lastFour.split("").join(" "));
+    if (stopped) return;
+    await sleep(1000);
+  }
 
-            /*
-             Make every row the same length as the header.
-            */
+  // Column 2: Name
+  if (row[1] !== undefined && row[1] !== "") {
+    await speak(row[1]);
+    if (stopped) return;
+    await sleep(1000);
+  }
 
-            rows = rows.map(function(row){
+  // Columns 3 through second-last: marks/values.
+  // IMPORTANT: the last column is deliberately excluded here.
+  const lastIndex = row.length - 1;
 
-                while(row.length < headers.length){
-                    row.push("");
-                }
+  for (let j = 2; j < lastIndex; j++) {
+    const value = sayValue(row[j]);
+    if (!value) continue;
 
-                return row.slice(0,headers.length);
+    await speak(value);
+    if (stopped) return;
+    await sleep(1000);
+  }
 
-            });
+  // Last column: speak exactly once.
+  if (lastIndex >= 2) {
+    const total = sayValue(row[lastIndex]);
+    if (total) {
+      const label = /total/i.test(headers[lastIndex] || "") ? "Total " : "";
+      await speak(label + total);
+    }
+  }
 
-            current = 0;
+  if (stopped) return;
 
-            document
-            .getElementById("startRowInput")
-            .max = rows.length;
+  status(`Finished row ${current + 1}. Say “Next” to continue.`);
+  if (voiceEnabled) startRecognition();
+}
 
-            document
-            .getElementById("fileInfo")
-            .textContent =
-                file.name +
-                " — " +
-                rows.length +
-                " rows, " +
-                headers.length +
-                " columns";
+function nextRow() {
+  if (!rows.length) return;
 
-            render();
+  stopRecognitionOnly();
+  speechSynthesis.cancel();
+  stopped = false;
 
-            setStatus(
-                "Loaded " +
-                rows.length +
-                " rows. Ready at row 1."
-            );
+  if (current < rows.length - 1) {
+    current++;
+    render();
+    readCurrentRow();
+  } else {
+    status("End of CSV reached.");
+  }
+}
 
-        }
-        catch(error){
+function previousRow() {
+  if (!rows.length) return;
 
-            headers = [];
-            rows = [];
+  stopRecognitionOnly();
+  speechSynthesis.cancel();
+  stopped = false;
 
-            render();
+  if (current > 0) {
+    current--;
+    render();
+    readCurrentRow();
+  } else {
+    status("Already at the first row.");
+    if (voiceEnabled) startRecognition();
+  }
+}
 
-            setStatus(
-                "Could not read CSV: " +
-                error.message
-            );
+function repeatRow() {
+  if (!rows.length) return;
+  readCurrentRow();
+}
 
-        }
+function goToRow() {
+  if (!rows.length) {
+    status("Please import a CSV file first.");
+    return;
+  }
 
-    };
+  const n = Number.parseInt($("startRow").value, 10);
+  if (!Number.isInteger(n) || n < 1 || n > rows.length) {
+    status(`Enter a row number from 1 to ${rows.length}.`);
+    return;
+  }
 
-    reader.readAsText(file);
+  current = n - 1;
+  render();
+  status(`Ready at row ${n}. Click “Read Current Row”.`);
+}
 
+function stopAutomaticTraversal() {
+  autoTraversal = false;
+  clearTimeout(autoTimer);
+  autoTimer = null;
+  $("autoBtn").disabled = false;
+  $("autoStopBtn").disabled = true;
+}
+
+function startAutomaticTraversal() {
+  if (!rows.length) {
+    status("Please import a CSV file first.");
+    return;
+  }
+
+  const seconds = Number.parseFloat($("autoSeconds").value);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    status("Please enter a positive number of seconds.");
+    return;
+  }
+
+  stopRecognitionOnly();
+  speechSynthesis.cancel();
+
+  autoTraversal = true;
+  stopped = false;
+  $("autoBtn").disabled = true;
+  $("autoStopBtn").disabled = false;
+
+  status(`Automatic traversal started. ${seconds} seconds between rows.`);
+  readCurrentRowAutomatically(seconds);
+}
+
+async function readCurrentRowAutomatically(seconds) {
+  if (!autoTraversal || !rows.length) return;
+
+  stopRecognitionOnly();
+  speechSynthesis.cancel();
+  stopped = false;
+  render();
+
+  const row = rows[current];
+
+  status(`Automatically reading row ${current + 1} of ${rows.length}...`);
+
+  // Register number: read the last four digits only, one digit at a time.
+  const registerNo = String(row[0] ?? "").trim();
+  if (registerNo) {
+    const digits = registerNo.replace(/\D/g, "");
+    const lastFour = digits.length >= 4
+      ? digits.slice(-4)
+      : digits.padStart(4, "0");
+
+    await speak(lastFour.split("").join(" "));
+    if (!autoTraversal || stopped) return;
+    await sleep(1000);
+  }
+
+  // Name.
+  if (row[1] !== undefined && String(row[1]).trim() !== "") {
+    await speak(row[1]);
+    if (!autoTraversal || stopped) return;
+    await sleep(1000);
+  }
+
+  // Marks/values, excluding the final Total column.
+  const lastIndex = row.length - 1;
+  for (let j = 2; j < lastIndex; j++) {
+    const value = sayValue(row[j]);
+    if (!value) continue;
+
+    await speak(value);
+    if (!autoTraversal || stopped) return;
+    await sleep(1000);
+  }
+
+  // Total: exactly once.
+  if (lastIndex >= 2) {
+    const total = sayValue(row[lastIndex]);
+    if (total) {
+      const label = /total/i.test(headers[lastIndex] || "") ? "Total " : "";
+      await speak(label + total);
+    }
+  }
+
+  if (!autoTraversal || stopped) return;
+
+  if (current >= rows.length - 1) {
+    status("Automatic traversal completed — last row reached.");
+    stopAutomaticTraversal();
+    return;
+  }
+
+  status(`Row ${current + 1} completed. Next row in ${seconds} seconds...`);
+
+  autoTimer = setTimeout(() => {
+    if (!autoTraversal || stopped) return;
+    current++;
+    render();
+    readCurrentRowAutomatically(seconds);
+  }, seconds * 1000);
+}
+
+function stopAll() {
+  stopped = true;
+  stopAutomaticTraversal();
+  speechSynthesis.cancel();
+  stopRecognitionOnly();
+  status("Stopped.");
+  micStatus(
+    voiceEnabled ? "Voice input enabled; click Enable/Listen to resume." : "Voice input not started.",
+    "ready"
+  );
+}
+
+function stopRecognitionOnly() {
+  clearTimeout(retryTimer);
+  if (recognition) {
+    try { recognition.abort(); } catch (e) {}
+  }
+  recognitionRunning = false;
+}
+
+function setupRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SR) {
+    micStatus("Speech recognition is not supported in this Chrome/browser.", "error");
+    return false;
+  }
+
+  // Create ONE recognition object and reuse it.
+  recognition = new SR();
+  recognition.lang = "en-IN";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 3;
+
+  recognition.onstart = () => {
+    recognitionRunning = true;
+    micStatus("Listening... say Next, Repeat, Previous, or Stop.", "listening");
+    status("Listening for your voice command...");
+  };
+
+  recognition.onresult = event => {
+    recognitionRunning = false;
+
+    let text = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      text += " " + event.results[i][0].transcript;
+    }
+
+    text = text.trim().toLowerCase();
+    $("heard").textContent = text ? `Heard: ${text}` : "Heard: (nothing)";
+
+    handleCommand(text);
+  };
+
+  recognition.onerror = event => {
+    recognitionRunning = false;
+
+    if (!voiceEnabled || stopped) return;
+
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      micStatus("Microphone permission was denied. Check Chrome site settings for localhost.", "error");
+      status("Allow Microphone for http://localhost:8000 and reload once.");
+      return;
+    }
+
+    if (event.error === "audio-capture") {
+      micStatus("No usable microphone was detected.", "error");
+      status("Check Ubuntu microphone input and Chrome microphone permissions.");
+      return;
+    }
+
+    if (event.error === "network") {
+      micStatus("Chrome speech service reported a network error.", "error");
+      status("Speech recognition needs Chrome's speech service. Check Internet connectivity.");
+      return;
+    }
+
+    // no-speech/aborted/other transient errors: retry.
+    scheduleRecognition();
+  };
+
+  recognition.onend = () => {
+    recognitionRunning = false;
+    if (voiceEnabled && !stopped) scheduleRecognition();
+  };
+
+  return true;
+}
+
+function scheduleRecognition() {
+  if (!voiceEnabled || stopped || recognitionRunning) return;
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(startRecognition, 800);
+}
+
+function startRecognition() {
+  if (!voiceEnabled || stopped || recognitionRunning || !recognition) return;
+
+  try {
+    recognition.start();
+  } catch (e) {
+    // If Chrome says it is already starting/running, wait and retry.
+    scheduleRecognition();
+  }
+}
+
+function handleCommand(text) {
+  if (!text) {
+    status("I did not hear anything. Please say Yes.");
+    scheduleRecognition();
+    return;
+  }
+
+  if (/\b(stop|quit|exit)\b/.test(text)) {
+    stopAll();
+    return;
+  }
+
+  if (/\b(previous|back|go back)\b/.test(text)) {
+    previousRow();
+    return;
+  }
+
+  if (/\b(repeat|again|read again)\b/.test(text)) {
+    repeatRow();
+    return;
+  }
+
+  if (/\b(yes|next|continue|proceed|go ahead)\b/.test(text)) {
+    nextRow();
+    return;
+  }
+
+  if (/\b(start|read|begin)\b/.test(text)) {
+    readCurrentRow();
+    return;
+  }
+
+  status(`I heard “${text}”, but did not recognize it. Say “Yes”.`);
+  scheduleRecognition();
+}
+
+async function requestMicrophonePermission() {
+  // getUserMedia is used only for the initial explicit user action.
+  // This gives Chrome a normal microphone permission request on localhost.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    status("Browser microphone API is unavailable.");
+    return false;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    stream.getTracks().forEach(track => track.stop());
+
+    micStatus("Microphone permission granted.", "ready");
+    return true;
+  } catch (err) {
+    micStatus("Microphone permission was not granted.", "error");
+    status("Please allow Microphone when Chrome asks, then click Enable Voice Input again.");
+    return false;
+  }
+}
+
+async function enableVoice() {
+  stopped = false;
+
+  const ok = await requestMicrophonePermission();
+  if (!ok) return;
+
+  if (!recognition && !setupRecognition()) return;
+
+  voiceEnabled = true;
+  $("enableVoice").textContent = "🎤 Voice Input Enabled";
+  micStatus("Voice input enabled. Waiting for a command...", "ready");
+
+  status("Voice input is ready. Click “Read Current Row” to begin.");
+}
+
+$("csvFile").addEventListener("change", async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  const data = csvParse(text);
+
+  if (!data.length) {
+    status("CSV file is empty.");
+    return;
+  }
+
+  headers = data[0].map(x => String(x).trim());
+  rows = data.slice(1).filter(r =>
+    r.some(x => String(x ?? "").trim() !== "")
+  );
+
+  current = 0;
+  registerSpoken = false;
+  render();
+
+  status(`Imported "${file.name}". ${rows.length} rows loaded.`);
 });
 
-
-/* ---------- STATUS ---------- */
-
-function setStatus(message){
-
-    document
-    .getElementById("status")
-    .textContent = message;
-
-}
-
-
-/* ---------- DISPLAY CURRENT ROW ---------- */
-
-function render(){
-
-    const card =
-        document.getElementById("currentCard");
-
-    if(!rows.length){
-
-        card.classList.add("hidden");
-
-        document
-        .getElementById("listTitle")
-        .classList.add("hidden");
-
-        document
-        .getElementById("tableContainer")
-        .innerHTML = "";
-
-        return;
-    }
-
-    card.classList.remove("hidden");
-
-    document
-    .getElementById("listTitle")
-    .classList.remove("hidden");
-
-    document
-    .getElementById("startRowInput")
-    .value = current + 1;
-
-    const row = rows[current];
-
-    const registerNumber = row[0] || "";
-    const name = row[1] || "";
-
-    const values = row.slice(2);
-
-    card.innerHTML =
-
-        `<div class="small">
-            Row ${current+1} of ${rows.length}
-         </div>
-
-         <div class="reg">
-            ${escapeHTML(registerNumber)}
-         </div>
-
-         <div class="name">
-            ${escapeHTML(name)}
-         </div>
-
-         <div class="values">
-
-            ${values.map(function(value){
-
-                return `
-                <span class="value">
-                    ${escapeHTML(value)}
-                </span>`;
-
-            }).join("")}
-
-         </div>`;
-
-
-    /*
-       Display table.
-
-       Column 2 = Name is intentionally hidden.
-    */
-
-    let table =
-        `<table>
-        <thead>
-        <tr>
-        <th>#</th>`;
-
-    headers.forEach(function(header,index){
-
-        if(index !== 1){
-
-            table +=
-                `<th>${escapeHTML(header)}</th>`;
-
-        }
-
-    });
-
-    table += "</tr></thead><tbody>";
-
-
-    rows.forEach(function(row,index){
-
-        table +=
-            `<tr class="${index === current ? "active" : ""}"
-                 onclick="selectRow(${index})">
-
-            <td>${index+1}</td>`;
-
-        row.forEach(function(value,columnIndex){
-
-            if(columnIndex !== 1){
-
-                table +=
-                    `<td>${escapeHTML(value)}</td>`;
-
-            }
-
-        });
-
-        table += "</tr>";
-
-    });
-
-    table += "</tbody></table>";
-
-    document
-    .getElementById("tableContainer")
-    .innerHTML = table;
-
-}
-
-
-/* ---------- SPEECH ---------- */
-
-function speakRow(row,callback){
-
-    window.speechSynthesis.cancel();
-
-    if(!row || row.length < 2){
-        return;
-    }
-
-    const registerNumber = row[0] || "";
-    const name = row[1] || "";
-
-    const values = row.slice(2);
-
-    /*
-       First speak register number and name.
-    */
-
-    const introduction =
-        new SpeechSynthesisUtterance(
-            `Register number ${registerNumberSpeech(registerNumber)}. ${name}.`
-        );
-
-    introduction.rate = 0.82;
-    introduction.pitch = 1;
-
-
-    introduction.onend = function(){
-
-        let index = 0;
-
-
-        function speakNextValue(){
-
-            if(stopped){
-                return;
-            }
-
-
-            /*
-               Finished all values.
-            */
-
-            if(index >= values.length){
-
-                /*
-                   One-second pause before total/final value.
-                */
-
-                setTimeout(function(){
-
-                    if(stopped){
-                        return;
-                    }
-
-                    const lastHeader =
-                        headers[headers.length-1] || "";
-
-                    const lastValue =
-                        row[row.length-1] || "";
-
-                    const prefix =
-                        /total/i.test(lastHeader)
-                        ? "Total "
-                        : "";
-
-                    const utterance =
-                        new SpeechSynthesisUtterance(
-                            prefix + sayNumber(lastValue)
-                        );
-
-                    utterance.rate = 0.82;
-                    utterance.pitch = 1;
-
-                    utterance.onend = function(){
-
-                        if(callback && !stopped){
-                            callback();
-                        }
-
-                    };
-
-                    window.speechSynthesis.speak(
-                        utterance
-                    );
-
-                },1000);
-
-                return;
-            }
-
-
-            /*
-               Speak one mark/value.
-            */
-
-            const utterance =
-                new SpeechSynthesisUtterance(
-                    sayNumber(values[index])
-                );
-
-            utterance.rate = 0.82;
-            utterance.pitch = 1;
-
-            utterance.onend = function(){
-
-                index++;
-
-                /*
-                   ONE SECOND PAUSE BETWEEN VALUES.
-                */
-
-                setTimeout(
-                    speakNextValue,
-                    1000
-                );
-
-            };
-
-            window.speechSynthesis.speak(
-                utterance
-            );
-
-        }
-
-        speakNextValue();
-
-    };
-
-    window.speechSynthesis.speak(
-        introduction
-    );
-
-}
-
-
-/* ---------- START READING ---------- */
-
-function startReading(){
-
-    if(!rows.length){
-
-        setStatus(
-            "Please select a CSV file first."
-        );
-
-        return;
-    }
-
-    stopped = false;
-
-    stopListening();
-
-    setStatus(
-        `Reading row ${current+1}. Please wait...`
-    );
-
-    speakRow(
-        rows[current],
-        function(){
-
-            if(!stopped){
-                beginListening();
-            }
-
-        }
-    );
-
-}
-
-
-/* ---------- REPEAT ---------- */
-
-function repeatRow(){
-
-    startReading();
-
-}
-
-
-/* ---------- START AT SPECIFIC ROW ---------- */
-
-function setStartRow(){
-
-    if(!rows.length){
-
-        setStatus(
-            "Please select a CSV file first."
-        );
-
-        return;
-    }
-
-    let rowNumber =
-        parseInt(
-            document
-            .getElementById("startRowInput")
-            .value,
-            10
-        );
-
-    if(
-        isNaN(rowNumber) ||
-        rowNumber < 1 ||
-        rowNumber > rows.length
-    ){
-
-        setStatus(
-            `Enter a row number from 1 to ${rows.length}.`
-        );
-
-        return;
-    }
-
-    stopListening();
-
-    window.speechSynthesis.cancel();
-
-    stopped = false;
-
-    current = rowNumber - 1;
-
-    render();
-
-    setStatus(
-        `Ready at row ${rowNumber}. Click “Read Current Row” to begin.`
-    );
-
-}
-
-
-/* ---------- NEXT ---------- */
-
-function nextRow(){
-
-    if(!rows.length){
-        return;
-    }
-
-    stopListening();
-
-    window.speechSynthesis.cancel();
-
-    stopped = false;
-
-    if(current < rows.length - 1){
-
-        current++;
-
-        render();
-
-        startReading();
-
-    }
-    else{
-
-        setStatus(
-            "End of CSV reached."
-        );
-
-    }
-
-}
-
-
-/* ---------- PREVIOUS ---------- */
-
-function previousRow(){
-
-    if(!rows.length){
-        return;
-    }
-
-    stopListening();
-
-    window.speechSynthesis.cancel();
-
-    stopped = false;
-
-    if(current > 0){
-        current--;
-    }
-
-    render();
-
-    startReading();
-
-}
-
-
-/* ---------- CLICK A TABLE ROW ---------- */
-
-function selectRow(index){
-
-    stopListening();
-
-    window.speechSynthesis.cancel();
-
-    stopped = false;
-
-    current = index;
-
-    render();
-
-    startReading();
-
-}
-
-
-/* ---------- STOP ---------- */
-
-function stopAll(){
-
-    stopped = true;
-
-    window.speechSynthesis.cancel();
-
-    stopListening();
-
-    setStatus(
-        "Stopped. Click “Read Current Row” to continue."
-    );
-
-}
-
-
-/* ---------- VOICE RECOGNITION ---------- */
-
-function beginListening(){
-
-    if(
-        !("webkitSpeechRecognition" in window) &&
-        !("SpeechRecognition" in window)
-    ){
-
-        setStatus(
-            "Speech recognition is not available. Please use Google Chrome."
-        );
-
-        return;
-    }
-
-
-    const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
-
-    recognition =
-        new SpeechRecognition();
-
-
-    recognition.lang = "en-IN";
-
-    recognition.continuous = false;
-
-    recognition.interimResults = false;
-
-
-    setStatus(
-        "Listening — say “Yes” for the next row."
-    );
-
-
-    recognition.onresult = function(event){
-
-        const heard =
-            event.results[0][0]
-            .transcript
-            .toLowerCase()
-            .trim();
-
-
-        if(
-            heard.includes("yes") ||
-            heard.includes("next") ||
-            heard.includes("continue")
-        ){
-
-            nextRow();
-
-        }
-        else if(
-            heard.includes("repeat") ||
-            heard.includes("again")
-        ){
-
-            startReading();
-
-        }
-        else if(
-            heard.includes("previous") ||
-            heard.includes("back")
-        ){
-
-            previousRow();
-
-        }
-        else if(
-            heard.includes("stop")
-        ){
-
-            stopAll();
-
-        }
-        else if(
-            heard.includes("start") ||
-            heard.includes("read")
-        ){
-
-            startReading();
-
-        }
-        else{
-
-            setStatus(
-                `Heard “${heard}”. Say “Yes” for the next row.`
-            );
-
-            if(!stopped){
-
-                setTimeout(
-                    beginListening,
-                    700
-                );
-
-            }
-
-        }
-
-    };
-
-
-    recognition.onerror = function(event){
-
-        recognition = null;
-
-        if(
-            event.error === "not-allowed" ||
-            event.error === "service-not-allowed"
-        ){
-
-            setStatus(
-                "Microphone permission denied. Allow microphone access in Chrome."
-            );
-
-        }
-        else if(!stopped){
-
-            setStatus(
-                "I could not hear you. Say “Yes” for the next row."
-            );
-
-            setTimeout(
-                beginListening,
-                700
-            );
-
-        }
-
-    };
-
-
-    recognition.onend = function(){
-
-        recognition = null;
-
-    };
-
-
-    try{
-
-        recognition.start();
-
-    }
-    catch(error){
-
-        // Browser may report that recognition is already active.
-
-    }
-
-}
-
-
-/* ---------- STOP LISTENING ---------- */
-
-function stopListening(){
-
-    if(recognition){
-
-        try{
-            recognition.stop();
-        }
-        catch(error){}
-
-        recognition = null;
-
-    }
-
-}
-
-
-/* ---------- ENTER KEY FOR ROW NUMBER ---------- */
-
-document
-.getElementById("startRowInput")
-.addEventListener(
-    "keydown",
-    function(event){
-
-        if(event.key === "Enter"){
-            setStartRow();
-        }
-
-    }
-);
-
+$("goBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  goToRow();
+});
+$("readBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  readCurrentRow();
+});
+$("repeatBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  repeatRow();
+});
+$("prevBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  previousRow();
+});
+$("nextBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  nextRow();
+});
+$("stopBtn").addEventListener("click", stopAll);
+$("autoBtn").addEventListener("click", startAutomaticTraversal);
+$("autoStopBtn").addEventListener("click", () => {
+  stopAutomaticTraversal();
+  stopped = true;
+  speechSynthesis.cancel();
+  stopRecognitionOnly();
+  status("Automatic traversal stopped.");
+});
+
+$("autoStopBtn").disabled = true;
+
+$("enableVoice").addEventListener("click", enableVoice);
+
+$("yesBtn").addEventListener("click", () => {
+  // This is a completely reliable manual fallback if speech recognition
+  // is unavailable on a particular Ubuntu/Chrome installation.
+  if (rows.length) nextRow();
+});
+
+$("startRow").addEventListener("keydown", event => {
+  if (event.key === "Enter") goToRow();
+});
+
+// Prepare the recognition object, but DO NOT request the microphone here.
+// Permission is requested only after the user clicks Enable Voice Input.
+setupRecognition();
 </script>
-
 </body>
 </html>

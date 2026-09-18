@@ -5,10 +5,10 @@ A browser-based CSV row reader with speech output, voice navigation, and automat
 ## Features
 
 - Import any CSV; no student data is embedded.
-- Displays the complete imported CSV, including Name.
+- Displays the complete imported CSV.
 - Reads each row aloud.
 - Reads the actual register number using only its last four digits, spoken individually.
-- Voice commands: **Yes/Next/Continue**, **Repeat/Again**, **Previous/Back**, **Stop**.
+- Voice commands: **Next**, **Repeat**, **Previous**, **Stop**.
 - Start from any row.
 - Automatic traversal: specify seconds between rows and start; no voice command or Next button is required.
 - Manual **YES — NEXT ROW** fallback.
@@ -53,23 +53,22 @@ Allow microphone access.
 The first row must contain column headings.
 
 - Column 1: Register No.
-- Column 2: Name
-- Columns 3 onward: marks/values
-- Final column: Total
+- Column 2: Name (Optional) - in my opinion it is not required - if name is present it will take a long time to enter.
+- Columns 3 onward: marks/ values 
 
 Example:
 
 ```csv
-Register No,Name,Test 1,Test 2,Assignment,Total
-2022012345,Aruna,18,17,20,55
-2022012346,Balaraman,16,19,18,53
+Register No, 1,Q1,Q2,Q3,Q4
+2022012345,18,17,20,55
+2022012346,16,19,18,53
 ```
 
 The complete CSV is displayed. The register number spoken is the final four digits only. For example, `2024012345` is spoken as `2 3 4 5`.
 
 ## Voice mode
 
-Import the CSV, optionally choose a starting row, enable voice input, and click **Read Current Row**. After the row is read, say **Yes** to proceed.
+Import the CSV, optionally choose a starting row, enable voice input, and click **Read Current Row**. After the row is read, say **Next** to proceed.
 
 ## Automatic mode
 
